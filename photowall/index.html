@@ -261,6 +261,31 @@ function compressImage(file) {
   });
 }
 
+async function generateThumbBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const maxW = 400;
+      let w = img.width, h = img.height;
+      if (w > maxW) { h = Math.round(h * maxW / w); w = maxW; }
+      const canvas = document.createElement("canvas");
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0, w, h);
+      canvas.toBlob(thumbBlob => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result.split(",")[1]);
+        reader.onerror = () => reject(new Error("缩略图读取失败"));
+        reader.readAsDataURL(thumbBlob);
+      }, "image/jpeg", 0.6);
+    };
+    img.onerror = () => reject(new Error("缩略图生成失败"));
+    img.src = url;
+  });
+}
+
 async function loadGallery() {
   const gallery = document.getElementById("gallery");
   const empty = document.getElementById("emptyState");
@@ -297,9 +322,10 @@ function renderPhotos() {
   gallery.innerHTML = toShow.map((p, i) => {
     const name = p.name;
     const displayTime = formatTime(name);
+    const thumbUrl = p.download_url.replace(/\/uploads\/(.+?)\.\w+$/, '/thumbs/$1_thumb.jpg');
     return `
       <div class="photo">
-        <img src="${p.download_url}" alt="Photo" loading="lazy" onclick="openLightbox('${p.download_url}')">
+        <img src="${thumbUrl}" alt="Photo" loading="lazy" onclick="openLightbox('${p.download_url}')">
         <div class="meta">
           <span class="taken">${displayTime}</span>
         </div>
@@ -351,16 +377,28 @@ async function handleUpload(e) {
     const filename = `${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}.jpg`;
     const path = `${UPLOAD_PATH}/${filename}`;
 
-    const resp = await fetch(`${API}/contents/${path}`, {
-      method: "PUT",
-      headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        message: `Upload: ${filename}`,
-        content: base64
-      })
-    });
+    const [resp, thumbBase64] = await Promise.all([
+      fetch(`${API}/contents/${path}`, {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: `Upload: ${filename}`,
+          content: base64
+        })
+      }),
+      generateThumbBase64(compressed)
+    ]);
 
     if (resp.ok) {
+      const thumbFilename = filename.replace(/\.\w+$/, '_thumb.jpg');
+      await fetch(`${API}/contents/photowall/thumbs/${thumbFilename}`, {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: `Thumb: ${thumbFilename}`,
+          content: thumbBase64
+        })
+      });
       setStatus("上传成功！", false);
       await loadGallery();
     } else {
@@ -378,7 +416,7 @@ function setStatus(msg, isError) {
   const el = document.getElementById("statusMsg");
   el.textContent = msg;
   el.className = "status-msg" + (isError ? " error" : "");
-  if (msg.includes("成功")) setTimeout(() => { el.textContent = "支持 JPG / PNG / WebP，单张最大 5MB"; el.className = "status-msg"; }, 3000);
+  if (msg.includes("成功")) setTimeout(() => { el.textContent = "支持 JPG / PNG / WebP，单张最大 20MB"; el.className = "status-msg"; }, 3000);
 }
 
 function openLightbox(url) {
