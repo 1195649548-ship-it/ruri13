@@ -117,18 +117,6 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .gallery .photo .delete-btn {
-    background: none;
-    border: none;
-    color: #8a7078;
-    cursor: pointer;
-    font-size: 12px;
-    padding: 2px 6px;
-    border-radius: 4px;
-    transition: color 0.2s, background 0.2s;
-  }
-  .gallery .photo .delete-btn:hover { color: #e87078; background: rgba(255,255,255,0.05); }
-
   .lightbox {
     position: fixed;
     top: 0; left: 0;
@@ -255,7 +243,6 @@ async function loadGallery() {
         <img src="${p.download_url}" alt="Photo" loading="lazy" onclick="openLightbox('${p.download_url}')">
         <div class="meta">
           <span class="taken">${displayTime}</span>
-          <button class="delete-btn" onclick="event.stopPropagation();deletePhoto('${p.sha}','${p.name}',${i})">删除</button>
         </div>
       </div>`;
   }).join("");
@@ -319,21 +306,6 @@ async function handleUpload(e) {
   }
   btn.disabled = false;
   e.target.value = "";
-}
-
-async function deletePhoto(sha, filename, idx) {
-  if (!confirm("确定删除这张照片？")) return;
-  try {
-    const resp = await fetch(`${API}/contents/${UPLOAD_PATH}/${filename}`, {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ message: `Delete: ${filename}`, sha: sha })
-    });
-    if (resp.ok) {
-      photos.splice(idx, 1);
-      loadGallery();
-    }
-  } catch(e) { console.error(e); }
 }
 
 function setStatus(msg, isError) {
